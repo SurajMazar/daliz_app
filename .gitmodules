@@ -1,0 +1,8 @@
+[submodule "daliz_api"]
+	path = daliz_api
+	url = git@github.com:SurajMazar/daliz_api.git
+	branch = main
+[submodule "daliz_web"]
+	path = daliz_web
+	url = git@github.com:SurajMazar/daliz_web.git
+	branch = main
