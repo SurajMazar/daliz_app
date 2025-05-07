@@ -1,0 +1,91 @@
+services:
+  # BACKEND API
+  daliz_api:
+    build:
+      context: ./daliz_api
+      dockerfile: docker/DockerFileLocal
+    container_name: daliz_api
+    env_file:
+      - ./daliz_api/.env.local
+    volumes:
+      - ./daliz_api:/app
+    command: sh -c "pnpm install && pnpm start:dev"
+    depends_on:
+      daliz_postgres:
+        condition: service_healthy
+      daliz_minio:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-4444}:${APP_PORT:-4444}"
+
+  # FRONTEND OF THE APPLICATION
+  daliz_web:
+    build:
+      context: ./daliz_web
+      dockerfile: docker/DockerFileLocal
+    container_name: daliz_web
+    env_file:
+      - ./daliz_web/.env.local
+    volumes:
+      - ./daliz_api:/app
+    command: sh -c "yarn install && yarn dev --port ${APP_PORT_WEB:-3000}"
+    ports:
+      - "${APP_PORT_WEB:-3000}:${APP_PORT_WEB:-3000}"
+
+  # POSTGRES FOR THE APPLICATION
+  daliz_postgres:
+    image: postgres:17.4
+    container_name: daliz_postgres
+    volumes:
+      - ./docker/postgres/postgres-init:/enable-pgtrgm.sql
+      - daliz-app-volume-postgres:/var/lib/postgresql/data
+      - ./sql:/sql # HELPFUL FOR DATA DUMPING AND RESTORE
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-root}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
+      POSTGRES_DB: ${POSTGRES_DB:-daliz}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-root} -d ${POSTGRES_DB:-daliz}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    command: -p ${POSTGRES_PORT:-5432}
+    expose:
+      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"
+
+  # REDIS
+  daliz_redis:
+    image: redis:8.0.0-alpine
+    container_name: 'daliz_redis'
+    restart: always
+    ports:
+      - '${REDIS_PORT:-6379}:${REDIS_PORT:-6379}'
+    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD:-redis} --port ${REDIS_PORT:-6379}
+    volumes:
+      - daliz-app-volume-redis:/data
+
+  # MINIO FOR STORAGE
+  daliz_minio:
+    image: minio/minio:latest
+    container_name: daliz_minio
+    environment:
+      - MINIO_ROOT_USER=daliz_minio
+      - MINIO_ROOT_PASSWORD=daliz_minio
+    ports:
+      - "${MINIO_PORT:-9000}:${MINIO_PORT:-9000}"
+      - "${MINIO_PORT_WEB:-8900}:${MINIO_PORT_WEB:-8900}"
+    volumes:
+      - daliz-app-volume-minio:/data
+    restart: always
+    command: minio server /data/minio --console-address ":${MINIO_PORT_WEB:-8900}"
+    healthcheck:
+      test:
+        [ 'CMD', 'curl', '-f', 'http://localhost:${MINIO_PORT:-8900}/minio/health/live' ]
+      retries: 3
+      timeout: 5s
+
+volumes:
+  daliz-app-volume-postgres:
+  daliz-app-volume-minio:
+  daliz-app-volume-redis:
